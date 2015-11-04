@@ -7,6 +7,17 @@
  #include <OneWire.h>
 #include <DallasTemperature.h>
 
+
+/**
+ * Flags Pins
+ */
+const boolean flagIR = true;
+const boolean flagIRReader = true;
+const boolean flagTEMP = true;
+const boolean flagRELAY = true;
+const boolean flagPIR = true;
+
+
 /**
  * Configurações de Pins
  */
@@ -36,9 +47,9 @@ DallasTemperature DS18B20(&oneWire);
 const char* ssid = "ESPap";
 const char* password = "password";
 
-IPAddress local_ip(192, 168, 2, 110);
-IPAddress gateway(192, 168, 2, 1);
-IPAddress subnet(255, 255, 255, 0);
+//IPAddress local_ip(192, 168, 2, 110);
+//IPAddress gateway(192, 168, 2, 1);
+//IPAddress subnet(255, 255, 255, 0);
 
 /**
  * Configurações de MQTT
@@ -75,12 +86,20 @@ void setup() {
   Serial.begin(115200);
   Serial.println();
   Serial.print("Configuring access point...");
-  pinMode(pinIR, OUTPUT);
-  pinMode(pinRELAY, OUTPUT);
-  pinMode(pinTEMP, INPUT);
-  pinMode(pinPIR, INPUT);
-
-  //irrecv.enableIRIn();
+  if(flagIR){
+    pinMode(pinIR, OUTPUT);  
+  }
+  if(flagTEMP){
+    pinMode(pinTEMP, INPUT);  
+  }  
+  if(flagRELAY){
+    pinMode(pinRELAY, OUTPUT);  
+  }
+  if(flagPIR){    
+    pinMode(pinPIR, INPUT);
+  }
+  
+  irrecv.enableIRIn();
 
   setup_WIFI();
   setup_MQTT();
@@ -94,9 +113,12 @@ void loop() {
     reconnect();
   }
   client.loop();
-
-  mqttTemp(resultTemp);
-  mqttPir(resultPir);
+  if(flagTEMP){
+    mqttTemp(resultTemp);
+  }
+  if(flagPIR){
+    mqttPir(resultPir);
+  }
 }
 
 /************************************ WIFI ************************************/
@@ -111,8 +133,8 @@ void setup_WIFI() {
   Serial.println(ssid);
 
   WiFi.begin(ssid, password);
-
-  WiFi.config(local_ip, gateway, subnet);
+  
+  //WiFi.config(local_ip, gateway, subnet);
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
@@ -134,7 +156,7 @@ void setup_WIFI() {
 void ReadIR(char* result) {
   //irrecv.enableIRIn();
   delay(100);
-  irrecv.enableIRIn(); // Start the receiver
+  //irrecv.enableIRIn(); // Start the receiver
   //while (irrecv.decode(&results) == 0) {}
   if (irrecv.decode(&results)) {
     Serial.println("RESULT: ");
@@ -146,7 +168,7 @@ void ReadIR(char* result) {
     //dump(&results);
     
     //snprintf(result, 200, "{\"code\": %x}", results.value);    
-    snprintf(result, 200, "{\"code\": %X}", readIR);  
+    snprintf(result, 200, "{\"code\": %X}", readIR);
     irrecv.resume();
   }
   delay(100);
@@ -220,8 +242,8 @@ void setup_MQTT() {
 /**
  * Callback MQTT
  */
-void callback(char* topic, byte* payload, unsigned int length) {
-  //String topic = top;
+void callback(char* top, byte* payload, unsigned int length) {
+  String topic = top;
   String message;
   //char* message;
   
@@ -233,7 +255,8 @@ void callback(char* topic, byte* payload, unsigned int length) {
     message += (char)payload[i];
   }
   Serial.println();
-  if (topic == "ESP8266_IR_send") {
+
+  if (flagIR && topic == "ESP8266_IR_send") {
     Serial.print("topic=='ESP8266_IR_send'");
 
 //    unsigned long codeVal=0;
@@ -256,10 +279,10 @@ void callback(char* topic, byte* payload, unsigned int length) {
     //unsigned long code = strtoul(message, 0, length);
     unsigned long code = 0x10EF08F7;
     mqttIR(code, resultIR);
-  } else if (topic == "ESP8266_Relay_send") {
+  } else if (flagRELAY && topic == "ESP8266_Relay_send") {
     Serial.println("topic=='ESP8266_Relay_send'");
     mqttRelay(resultRelay);
-  } else if (topic == "ESP8266_ReadIR_send") {
+  } else if (flagIRReader && topic == "ESP8266_ReadIR_send") {
     Serial.println("topic=='ESP8266_ReadIR_send'");
     mqttReadIR(resultReadIR);
   }
@@ -273,11 +296,16 @@ void reconnect() {
     Serial.print("Attempting MQTT connection...");
     if (client.connect("ESP8266Client")) {
       Serial.println("connected");
-
-      client.subscribe("ESP8266_IR_send");
-      client.subscribe("ESP8266_Relay_send");
-      client.subscribe("ESP8266_ReadIR_send");
-
+      
+      if(flagIR){
+        client.subscribe("ESP8266_IR_send");
+      }
+      if(flagRELAY){
+        client.subscribe("ESP8266_Relay_send");
+      }
+      if(flagIRReader){
+        client.subscribe("ESP8266_ReadIR_send");
+      }
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
@@ -333,7 +361,7 @@ void mqttIR(unsigned long code, char* result) {
 /**
  * mqttReadIR
  */
-void mqttReadIR(char* result) {
+void mqttReadIR(char* result) {  
   ReadIR(result);
   Serial.println(result);
   client.publish("ESP8266_ReadIR", result);
